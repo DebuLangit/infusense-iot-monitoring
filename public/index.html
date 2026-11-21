@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MediFlow — Monitoring Infus Otomatis</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #090d16;
+      color: #e2e8f0;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+    }
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    .card {
+      background: linear-gradient(180deg, rgba(22, 31, 51, 0.94) 0%, rgba(17, 24, 39, 0.98) 100%);
+      border: 1px solid rgba(56, 189, 248, 0.14);
+      box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.7);
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: #1e293b;
+      height: 7px;
+      border-radius: 999px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #38bdf8;
+      border: 2px solid #090d16;
+      cursor: pointer;
+    }
+    input[type="range"].amber-thumb::-webkit-slider-thumb {
+      background: #fbbf24;
+    }
+    @keyframes dropFall {
+      0% { transform: translateY(0px) scale(0.75); opacity: 0; }
+      18% { opacity: 1; transform: translateY(6px) scale(1); }
+      85% { transform: translateY(42px) scale(1); opacity: 1; }
+      100% { transform: translateY(50px) scale(0.5); opacity: 0; }
+    }
+    .animate-drop { animation: dropFall 0.44s cubic-bezier(0.4, 0, 1, 1) forwards; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #090d16; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 999px; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- HEADER -->
+  <header class="border-b border-slate-800 bg-[#090d16]/95 backdrop-blur-md sticky top-0 z-30">
+    <div class="max-w-[1500px] mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-400 shrink-0">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18m0-18c-3.5 4.5-6 7.8-6 11a6 6 0 0012 0c0-3.2-2.5-6.5-6-11z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8.5 14.5h2l1.2-2.5 1.6 4.5 1.2-2h1.5" stroke-width="1.6"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-base md:text-lg font-bold tracking-tight text-white">MediFlow <span class="text-sky-400">ESP32</span></h1>
+          <p class="text-xs text-slate-400">Sistem Monitoring &amp; Kendali Infus Otomatis</p>
+        </div>
+      </div>
+
+      <!-- Status Koneksi & Tombol Pengaturan -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-[#111827] border border-slate-800 text-xs font-mono tabular-nums">
+          <span class="flex items-center gap-1.5 font-semibold">
+            <span id="connDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+            <span id="connText" class="text-slate-300">Menghubungkan...</span>
+          </span>
+          <span class="text-slate-700">|</span>
+          <span id="sensorWeightStatus" class="text-slate-400">Sensor Berat: Menunggu</span>
+        </div>
+
+        <button onclick="openCalibrationModal()"
+          class="px-3 py-2 rounded-xl bg-[#111827] hover:bg-slate-800 border border-slate-700/90 hover:border-emerald-400/50 text-xs font-medium text-emerald-300 transition flex items-center gap-1.5">
+          <span>⚖️</span>
+          <span>Kalibrasi &amp; Batas</span>
+        </button>
+
+        <button onclick="toggleAudio()" title="Aktifkan/Matikan Suara Alarm"
+          class="px-3 py-2 rounded-xl bg-[#111827] hover:bg-slate-800 border border-slate-700/90 text-xs font-medium text-slate-300 flex items-center gap-1.5 transition">
+          <span id="audioIcon">🔇</span>
+          <span id="audioLabel" class="hidden sm:inline">Alarm</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- BANNER PERINGATAN -->
+  <div id="alertBanner" class="hidden bg-rose-950/90 border-b border-rose-500/70 px-4 py-2.5">
+    <div class="max-w-[1500px] mx-auto flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5 text-rose-100 text-xs sm:text-sm font-medium">
+        <span class="px-2 py-0.5 rounded-md bg-rose-600 text-white font-bold text-[11px] uppercase tracking-wider animate-pulse">PERINGATAN</span>
+        <span id="alertText">Peringatan sistem.</span>
+      </div>
+      <button onclick="dismissAlert()" class="text-xs px-3 py-1 rounded-lg bg-rose-900/90 hover:bg-rose-800 text-rose-100 border border-rose-500/40 font-medium transition">
+        Tutup
+      </button>
+    </div>
+  </div>
+
+  <!-- KONTEN UTAMA -->
+  <main class="flex-1 max-w-[1500px] w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+
+    <!-- =====================================================================
+         KOLOM KIRI (4 KOLOM): VISUALISASI INFUS & LAYAR LCD ALAT
+         ===================================================================== -->
+    <section class="lg:col-span-4 card rounded-2xl p-4 flex flex-col justify-between gap-3">
+      <div>
+        <div class="flex items-center justify-between mb-2.5">
+          <div>
+            <h2 class="text-sm font-bold text-white">Visualisasi Infus</h2>
+            <p class="text-[11px] text-slate-400">Kondisi kantong, tetesan, &amp; penjepit real-time</p>
+          </div>
+          <span id="statusBadge" class="px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
+            Menunggu
+          </span>
+        </div>
+
+        <!-- Tampilan Layar LCD Alat -->
+        <div class="mb-3 bg-[#082f1e] border-2 border-slate-700 rounded-xl p-2.5 shadow-inner">
+          <div class="flex items-center justify-between text-[10px] font-mono text-emerald-400/70 mb-1">
+            <span>Tampilan Layar LCD Alat</span>
+            <span id="lcdArmedPill" class="px-1.5 rounded bg-emerald-950 text-emerald-300">Standby</span>
+          </div>
+          <div class="bg-[#0d4a2e] border border-emerald-500/30 rounded-lg px-3 py-1.5 font-mono text-sm sm:text-base tracking-widest text-[#86efac] leading-snug">
+            <div id="lcdRow0" class="whitespace-pre">TPM: 0.0/20 S110</div>
+            <div id="lcdRow1" class="whitespace-pre">Menunggu ESP32..</div>
+          </div>
+        </div>
+
+        <!-- Diagram Infus Real-Time -->
+        <div class="relative bg-[#090d16] rounded-2xl border border-slate-800/90 p-3 flex justify-center items-center overflow-hidden">
+          <div class="absolute inset-0 opacity-10 pointer-events-none"
+               style="background-image: radial-gradient(#38bdf8 1px, transparent 1px); background-size: 16px 16px;"></div>
+
+          <svg id="infusionSvg" viewBox="0 0 345 415" class="w-full max-w-[335px] h-auto select-none z-10">
+            <defs>
+              <linearGradient id="fluidGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop id="fluidGradTop" offset="0%" stop-color="#38bdf8" stop-opacity="0.82" />
+                <stop id="fluidGradBot" offset="100%" stop-color="#0284c7" stop-opacity="0.94" />
+              </linearGradient>
+              <linearGradient id="bagGlass" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#ffffff" stop-opacity="0.14" />
+                <stop offset="45%" stop-color="#ffffff" stop-opacity="0.02" />
+                <stop offset="100%" stop-color="#ffffff" stop-opacity="0.10" />
+              </linearGradient>
+              <clipPath id="bagClip">
+                <rect x="92" y="68" width="110" height="148" rx="18" />
+              </clipPath>
+            </defs>
+
+            <!-- Tiang Infus -->
+            <rect x="24" y="12" width="8" height="390" rx="4" fill="#334155" />
+            <rect x="24" y="16" width="144" height="7" rx="3.5" fill="#475569" />
+
+            <!-- Sensor Load Cell -->
+            <g transform="translate(84, 8)">
+              <rect x="0" y="0" width="98" height="24" rx="4" fill="#1e293b" stroke="#64748b" stroke-width="1.5"/>
+              <circle cx="36" cy="12" r="4" fill="#090d16" stroke="#94a3b8" stroke-width="1"/>
+              <circle cx="62" cy="12" r="4" fill="#090d16" stroke="#94a3b8" stroke-width="1"/>
+              <rect x="43" y="10" width="12" height="4" fill="#f59e0b" rx="1"/>
+              <path d="M63 24 L63 40 C63 46, 55 46, 55 40" fill="none" stroke="#cbd5e1" stroke-width="2.4" stroke-linecap="round"/>
+            </g>
+
+            <!-- Label Sensor Berat -->
+            <g transform="translate(204, 8)">
+              <rect x="0" y="0" width="132" height="50" rx="8" fill="#064e3b" fill-opacity="0.45" stroke="#10b981" stroke-opacity="0.55"/>
+              <text x="8" y="14" fill="#34d399" font-size="9" font-weight="700" font-family="JetBrains Mono">SENSOR BERAT</text>
+              <text id="svgWeightLabel" x="8" y="28" fill="#f8fafc" font-size="9.5" font-family="JetBrains Mono">Bersih: 0.0 g</text>
+              <text id="svgGrossLabel" x="8" y="41" fill="#94a3b8" font-size="8.5" font-family="JetBrains Mono">Total: 0.0 g</text>
+              <path d="M-22 12 C-10 12, -10 23, 0 23" fill="none" stroke="#10b981" stroke-width="1.4" stroke-dasharray="3 2"/>
+            </g>
+
+            <!-- Kantong Infus -->
+            <g>
+              <rect x="92" y="50" width="110" height="170" rx="20" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+              <circle cx="147" cy="59" r="4" fill="#090d16" stroke="#64748b" stroke-width="1.5"/>
+
+              <g clip-path="url(#bagClip)">
+                <rect id="svgFluidRect" x="92" y="214" width="110" height="0" fill="url(#fluidGrad)" />
+                <line id="svgFluidLine" x1="92" y1="214" x2="202" y2="214" stroke="#7dd3fc" stroke-width="2" opacity="0" />
+              </g>
+
+              <rect x="92" y="50" width="110" height="170" rx="20" fill="url(#bagGlass)" />
+
+              <text id="svgBagGramText" x="147" y="138" text-anchor="middle" fill="#ffffff" font-size="16" font-weight="700" font-family="JetBrains Mono">0 g</text>
+              <text id="svgBagLimitText" x="147" y="155" text-anchor="middle" fill="#bae6fd" font-size="9.5" font-family="JetBrains Mono">Batas: 50 g</text>
+            </g>
+
+            <!-- Leher Kantong -->
+            <rect x="141" y="220" width="12" height="13" fill="#334155" />
+
+            <!-- Ruang Tetes (Drip Chamber) -->
+            <g>
+              <rect x="131" y="233" width="32" height="66" rx="10" fill="#0f172a" stroke="#64748b" stroke-width="1.8"/>
+              <path d="M144 233 L150 233 L148 242 L146 242 Z" fill="#94a3b8"/>
+              <rect x="133" y="280" width="28" height="17" rx="6" fill="#0284c7" fill-opacity="0.75"/>
+              <path id="svgDroplet" d="M147 243 C147 243, 151 248, 151 251 A4 4 0 1 1 143 251 C143 248, 147 243, 147 243 Z" fill="#38bdf8" opacity="0"/>
+            </g>
+
+            <!-- Sensor Tetes Inframerah -->
+            <g transform="translate(0, 253)">
+              <rect x="108" y="0" width="19" height="22" rx="4" fill="#312e81" stroke="#818cf8" stroke-width="1.3"/>
+              <text x="117.5" y="14" text-anchor="middle" fill="#c7d2fe" font-size="7.5" font-weight="700" font-family="JetBrains Mono">IR</text>
+              <line id="irBeamLine" x1="127" y1="11" x2="167" y2="11" stroke="#f43f5e" stroke-width="1.6" stroke-dasharray="3 2" opacity="0.85"/>
+              <rect x="167" y="0" width="20" height="22" rx="4" fill="#1e293b" stroke="#38bdf8" stroke-width="1.3"/>
+              <text x="177" y="14" text-anchor="middle" fill="#7dd3fc" font-size="7.5" font-weight="700" font-family="JetBrains Mono">PD</text>
+
+              <g transform="translate(198, -7)">
+                <rect x="0" y="0" width="138" height="38" rx="7" fill="#0c4a6e" fill-opacity="0.45" stroke="#38bdf8" stroke-opacity="0.45"/>
+                <circle id="pdPulseLed" cx="11" cy="12" r="4" fill="#334155"/>
+                <text x="20" y="15" fill="#7dd3fc" font-size="8.5" font-weight="700" font-family="JetBrains Mono">SENSOR TETES</text>
+                <text id="svgTpmLabel" x="9" y="29" fill="#f8fafc" font-size="9" font-family="JetBrains Mono">0.0 TPM • 0ms</text>
+              </g>
+            </g>
+
+            <!-- Selang Infus -->
+            <rect x="144" y="299" width="6" height="103" fill="#1e293b" stroke="#475569" stroke-width="1"/>
+            <rect id="tubeFluidStream" x="145.5" y="299" width="3" height="103" fill="#38bdf8" opacity="0.15"/>
+
+            <!-- Penjepit Servo -->
+            <g transform="translate(72, 326)">
+              <rect x="0" y="0" width="54" height="36" rx="6" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5"/>
+              <text x="27" y="15" text-anchor="middle" fill="#fbbf24" font-size="8" font-weight="700" font-family="JetBrains Mono">SERVO</text>
+              <text id="svgServoAngleText" x="27" y="28" text-anchor="middle" fill="#ffffff" font-size="9.5" font-family="JetBrains Mono">110°</text>
+
+              <rect x="79" y="8" width="10" height="20" rx="2" fill="#64748b"/>
+              <rect id="servoPinchArm" x="54" y="12" width="25" height="12" rx="2" fill="#f59e0b"/>
+
+              <g transform="translate(126, -3)">
+                <rect x="0" y="0" width="138" height="42" rx="7" fill="#451a03" fill-opacity="0.45" stroke="#f59e0b" stroke-opacity="0.45"/>
+                <text x="9" y="14" fill="#fbbf24" font-size="8.5" font-weight="700" font-family="JetBrains Mono">PENJEPIT SELANG</text>
+                <text id="svgClampOpenText" x="9" y="27" fill="#f8fafc" font-size="9" font-family="JetBrains Mono">Posisi: 110°</text>
+                <text id="svgModeCallout" x="9" y="38" fill="#94a3b8" font-size="8" font-family="JetBrains Mono">Mode: Otomatis</text>
+              </g>
+            </g>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Tombol Aksi Timbangan -->
+      <div class="pt-2.5 border-t border-slate-800/90 grid grid-cols-3 gap-2">
+        <button onclick="sendAction('t', 'TARE')"
+          class="py-2.5 px-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-xs font-semibold text-emerald-300 transition active:scale-[0.98]"
+          title="Nolkan pembacaan berat kantong saat ini">
+          ⚖️ Nolkan (Tare)
+        </button>
+        <button onclick="sendAction('z', 'ZERO')"
+          class="py-2.5 px-2 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/35 text-xs font-semibold text-sky-300 transition active:scale-[0.98]"
+          title="Set ulang titik nol saat gantungan kosong">
+          🔄 Reset Kosong
+        </button>
+        <button onclick="openCalibrationModal()"
+          class="py-2.5 px-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-xs font-semibold text-amber-300 transition active:scale-[0.98]"
+          title="Atur kalibrasi beban dan batas alarm habis">
+          🛠️ Kalibrasi
+        </button>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         KOLOM TENGAH (5 KOLOM): DATA SENSOR, GRAFIK & RIWAYAT
+         ===================================================================== -->
+    <section class="lg:col-span-5 flex flex-col gap-4">
+
+      <!-- 3 Kartu Metrik Utama -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <!-- Sisa Cairan -->
+        <div class="card rounded-2xl p-3.5">
+          <div class="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1">
+            <span>SISA CAIRAN</span>
+            <span id="calLabel" class="font-mono text-slate-400 tabular-nums">Cal: 0</span>
+          </div>
+          <div class="flex items-baseline gap-1">
+            <span id="valBerat" class="text-2xl font-bold font-mono text-white tabular-nums">0.0</span>
+            <span class="text-xs text-slate-400 font-mono">gram</span>
+          </div>
+          <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-1 text-[11px] font-mono tabular-nums">
+            <div class="flex justify-between text-slate-400">
+              <span>Total / Batas:</span>
+              <span id="valGrossBatas" class="text-slate-200">0g / 50g</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>Estimasi Habis:</span>
+              <span id="valEstHabis" class="text-sky-300 font-semibold">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Kecepatan Tetes -->
+        <div class="card rounded-2xl p-3.5">
+          <div class="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1">
+            <span>KECEPATAN TETES</span>
+            <span id="targetLabel" class="text-sky-400 font-mono tabular-nums">Target 20</span>
+          </div>
+          <div class="flex items-baseline gap-1">
+            <span id="valTPM" class="text-2xl font-bold font-mono text-sky-400 tabular-nums">0.0</span>
+            <span class="text-xs text-slate-400 font-mono">TPM</span>
+          </div>
+          <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-1 text-[11px] font-mono tabular-nums">
+            <div class="flex justify-between text-slate-400">
+              <span>Debit / Jeda:</span>
+              <span id="valFlowInterval" class="text-slate-200">0.0 mL/j • 0ms</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>Total Tetes:</span>
+              <span id="valTotalTetes" class="text-slate-200">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Posisi Penjepit Servo -->
+        <div class="card rounded-2xl p-3.5">
+          <div class="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1">
+            <span>PENJEPIT SERVO</span>
+            <span id="modeLabel" class="px-1.5 rounded bg-emerald-500/15 text-emerald-400 font-mono">OTOMATIS</span>
+          </div>
+          <div class="flex items-baseline gap-1">
+            <span id="valServoPos" class="text-2xl font-bold font-mono text-amber-400 tabular-nums">110°</span>
+            <span id="valServoTarget" class="text-xs text-slate-400 font-mono">→ 110°</span>
+          </div>
+          <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-1 text-[11px] font-mono tabular-nums">
+            <div class="flex justify-between text-slate-400">
+              <span>Rentang Sudut:</span>
+              <span class="text-slate-200">10°–110°</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>Selisih Target:</span>
+              <span id="valSelisihTPM" class="text-slate-300">0 TPM</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Grafik Real-Time -->
+      <div class="card rounded-2xl p-4 flex flex-col">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+          <div>
+            <h3 class="text-sm font-bold text-white">Grafik Laju Tetes &amp; Posisi Servo</h3>
+            <p class="text-[11px] text-slate-400">Pembaruan otomatis setiap detik dari ESP32</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-3 text-[11px] font-mono">
+            <span class="flex items-center gap-1.5 text-sky-400"><span class="w-3 h-0.5 bg-sky-400 inline-block"></span>Aktual TPM</span>
+            <span class="flex items-center gap-1.5 text-emerald-400"><span class="w-3 h-0.5 border-t-2 border-dashed border-emerald-400 inline-block"></span>Target TPM</span>
+            <span class="flex items-center gap-1.5 text-amber-400"><span class="w-3 h-0.5 bg-amber-400 inline-block"></span>Sudut Servo (°)</span>
+          </div>
+        </div>
+
+        <div id="chartWrapper" class="relative h-[235px] w-full bg-[#090d16] rounded-xl border border-slate-800/90 overflow-hidden">
+          <canvas id="telemetryChart" class="w-full h-full block cursor-crosshair"></canvas>
+          <div id="chartEmptyHint" class="absolute inset-0 flex items-center justify-center text-xs font-mono text-slate-500 pointer-events-none">
+            Menunggu data masuk dari ESP32...
+          </div>
+          <div id="chartTooltip" class="hidden pointer-events-none absolute top-2.5 right-2.5 bg-[#111827]/95 border border-slate-700 rounded-xl px-3 py-2 text-[11px] font-mono shadow-xl tabular-nums">
+            <div id="ttTime" class="text-slate-400 mb-0.5">00:00:00</div>
+            <div class="text-sky-400">Aktual : <strong id="ttActual">0.0</strong> TPM</div>
+            <div class="text-emerald-400">Target : <strong id="ttTarget">20</strong> TPM</div>
+            <div class="text-amber-400">Servo  : <strong id="ttServo">110</strong>°</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Riwayat Aktivitas -->
+      <div class="card rounded-2xl p-4 space-y-2">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">Riwayat Aktivitas</h3>
+          <button onclick="clearLogs()" class="text-[11px] text-slate-400 hover:text-sky-400 font-medium transition">Bersihkan</button>
+        </div>
+        <div id="logList" class="h-[135px] overflow-y-auto space-y-1.5 font-mono text-[11px] pr-1"></div>
+      </div>
+
+    </section>
+
+    <!-- =====================================================================
+         KOLOM KANAN (3 KOLOM): PANEL KENDALI INFUS
+         ===================================================================== -->
+    <section class="lg:col-span-3 card rounded-2xl p-4 flex flex-col justify-between gap-4">
+      <div class="space-y-4">
+        <div>
+          <h2 class="text-sm font-bold text-white">Panel Kendali Infus</h2>
+          <p class="text-[11px] text-slate-400">Pengaturan otomatis tersimpan di memori alat</p>
+        </div>
+
+        <!-- Jenis Selang / Faktor Tetes -->
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1.5">Jenis Selang Infus (Tetes/mL)</label>
+          <div class="grid grid-cols-4 gap-1.5">
+            <button id="btnFk10" onclick="setFaktorTetes(10)" class="fk-btn py-2 rounded-xl text-xs font-mono font-semibold border transition bg-[#090d16] border-slate-800 text-slate-400 hover:text-white">10</button>
+            <button id="btnFk15" onclick="setFaktorTetes(15)" class="fk-btn py-2 rounded-xl text-xs font-mono font-semibold border transition bg-[#090d16] border-slate-800 text-slate-400 hover:text-white">15</button>
+            <button id="btnFk20" onclick="setFaktorTetes(20)" class="fk-btn py-2 rounded-xl text-xs font-mono font-semibold border transition bg-sky-500/20 border-sky-400/50 text-sky-300">20 Makro</button>
+            <button id="btnFk60" onclick="setFaktorTetes(60)" class="fk-btn py-2 rounded-xl text-xs font-mono font-semibold border transition bg-[#090d16] border-slate-800 text-slate-400 hover:text-white">60 Mikro</button>
+          </div>
+        </div>
+
+        <!-- Target Kecepatan Tetes -->
+        <div class="bg-[#090d16] p-3.5 rounded-2xl border border-slate-800/90 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-slate-300">Target Tetesan</span>
+            <div class="text-right font-mono tabular-nums">
+              <span class="text-sm font-bold text-sky-400"><span id="sliderTpmVal">20</span> TPM</span>
+              <span id="sliderMlVal" class="block text-[10px] text-slate-400">≈ 60.0 mL/jam</span>
+            </div>
+          </div>
+
+          <input id="tpmSlider" type="range" min="1" max="200" value="20"
+            oninput="onTpmSlide(this.value)" onchange="sendTargetTpm()" class="w-full" />
+
+          <div class="grid grid-cols-6 gap-1 pt-0.5">
+            <button onclick="setPresetTpm(10)" class="preset-btn py-1.5 rounded-lg bg-[#111827] hover:bg-slate-800 border border-slate-800 text-[11px] font-mono font-semibold text-slate-300 transition">10</button>
+            <button onclick="setPresetTpm(20)" class="preset-btn py-1.5 rounded-lg bg-[#111827] hover:bg-slate-800 border border-slate-800 text-[11px] font-mono font-semibold text-slate-300 transition">20</button>
+            <button onclick="setPresetTpm(30)" class="preset-btn py-1.5 rounded-lg bg-[#111827] hover:bg-slate-800 border border-slate-800 text-[11px] font-mono font-semibold text-slate-300 transition">30</button>
+            <button onclick="setPresetTpm(45)" class="preset-btn py-1.5 rounded-lg bg-[#111827] hover:bg-slate-800 border border-slate-800 text-[11px] font-mono font-semibold text-slate-300 transition">45</button>
+            <button onclick="setPresetTpm(60)" class="preset-btn py-1.5 rounded-lg bg-[#111827] hover:bg-slate-800 border border-slate-800 text-[11px] font-mono font-semibold text-slate-300 transition">60</button>
+            <button onclick="setPresetTpm(100)" class="preset-btn py-1.5 rounded-lg bg-[#111827] hover:bg-slate-800 border border-slate-800 text-[11px] font-mono font-semibold text-slate-300 transition">100</button>
+          </div>
+        </div>
+
+        <!-- Mode Kendali Penjepit -->
+        <div class="space-y-2.5">
+          <label class="block text-xs font-medium text-slate-300">Mode Kendali Penjepit</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="btnAuto" onclick="setAutoMode(true)"
+              class="py-2.5 px-2 rounded-xl text-xs font-semibold border transition bg-emerald-500/20 border-emerald-400/50 text-emerald-300">
+              Otomatis
+            </button>
+            <button id="btnManual" onclick="setAutoMode(false)"
+              class="py-2.5 px-2 rounded-xl text-xs font-semibold border transition bg-[#090d16] border-slate-800 text-slate-400 hover:text-white">
+              Manual
+            </button>
+          </div>
+
+          <div id="manualServoBox" class="bg-[#090d16] p-3.5 rounded-2xl border border-slate-800/90 opacity-45 pointer-events-none transition">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-medium text-slate-300">Atur Jepitan Servo</span>
+              <span class="font-mono text-xs font-bold text-amber-400 tabular-nums"><span id="sliderAngleVal">110</span>°</span>
+            </div>
+            <input id="angleSlider" type="range" min="10" max="110" value="110"
+              oninput="onAngleSlide(this.value)" onchange="sendManualAngle()" class="w-full amber-thumb" />
+            <div class="flex justify-between font-mono text-[10px] text-slate-500 mt-1">
+              <span>10° (Terbuka)</span>
+              <span>110° (Tertutup)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tombol Hentikan Aliran Darurat -->
+      <button onclick="emergencyClose()"
+        class="w-full py-3.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-[0.99] text-white font-bold text-xs tracking-wider uppercase shadow-lg shadow-rose-950/70 border border-rose-400/40 transition flex items-center justify-center gap-2">
+        <span>🛑</span>
+        <span>HENTIKAN ALIRAN DARURAT</span>
+      </button>
+    </section>
+
+  </main>
+
+  <!-- MODAL KALIBRASI & BATAS HABIS -->
+  <div id="calModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-[#111827] border border-slate-700 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div>
+          <h3 class="text-base font-bold text-white">⚖️ Kalibrasi Timbangan &amp; Batas Habis</h3>
+          <p class="text-xs text-slate-400">Pengaturan sensor berat kantong infus (kapasitas 5 kg)</p>
+        </div>
+        <button onclick="closeCalibrationModal()" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800">✕</button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div class="bg-[#090d16] p-3 rounded-xl border border-slate-800 space-y-2">
+          <div class="font-semibold text-slate-200">1. Nolkan Timbangan Terlebih Dahulu</div>
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="sendAction('z', 'ZERO')" class="py-2 px-3 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-sky-300 font-semibold transition">
+              🔄 Reset Kosong
+            </button>
+            <button onclick="sendAction('t', 'TARE')" class="py-2 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 font-semibold transition">
+              ⚖️ Nolkan (Tare)
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-[#090d16] p-3 rounded-xl border border-slate-800 space-y-2">
+          <label class="block font-semibold text-slate-200">2. Kalibrasi dengan Beban Diketahui (gram)</label>
+          <div class="flex gap-2">
+            <input id="inputCalGram" type="number" step="1" min="1" max="5000" value="500"
+              class="flex-1 bg-[#111827] border border-slate-700 rounded-xl px-3 py-2 font-mono text-sm text-white focus:outline-none focus:border-amber-400" />
+            <button onclick="submitCalibration()" class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-xs font-bold text-white transition">
+              Kalibrasi
+            </button>
+          </div>
+          <p class="text-[11px] text-slate-400">Gantungkan beban standar (misal 500 gram) setelah dinolkan, lalu klik Kalibrasi.</p>
+        </div>
+
+        <div class="bg-[#090d16] p-3 rounded-xl border border-slate-800 space-y-2">
+          <label class="block font-semibold text-slate-200">3. Batas Peringatan Cairan Habis (gram)</label>
+          <div class="flex gap-2">
+            <input id="inputBatasHabis" type="number" step="5" min="0" max="2000" value="50"
+              class="flex-1 bg-[#111827] border border-slate-700 rounded-xl px-3 py-2 font-mono text-sm text-white focus:outline-none focus:border-rose-400" />
+            <button onclick="submitBatasHabis()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white transition">
+              Simpan
+            </button>
+          </div>
+          <p class="text-[11px] text-slate-400">Penjepit otomatis menutup penuh jika berat total di bawah batas ini (isi 0 untuk mematikan).</p>
+        </div>
+      </div>
+
+      <div class="flex justify-end pt-2 border-t border-slate-800">
+        <button onclick="closeCalibrationModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition">
+          Selesai
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DEVICE_ID = 'ESP32-INFUS01';
+    const SUDUT_BUKA = 10;
+    const SUDUT_TUTUP = 110;
+    const TOLERANSI_TPM = 2;
+
+    let ws = null;
+    let audioEnabled = false;
+    let audioCtx = null;
+    let lastBeep = 0;
+    let dismissedAlertKey = null;
+    let hasReceivedEspData = false;
+    let hoverIndex = -1;
+
+    const state = {
+      actual_tpm: 0,
+      target_tpm: 20,
+      ml_jam: 0,
+      interval_ms: 0,
+      total_tetes: 0,
+      servo_pos: 110,
+      servo_target: 110,
+      auto_mode: true,
+      status_str: 'Menunggu',
+      berat_tampil: 0,
+      gross: 0,
+      raw_net: 0,
+      cal_factor: 0,
+      batas_habis: 50,
+      faktor_tetes: 20,
+      weight_ok: false,
+      overload: false,
+      alarm_habis: false,
+      armed: false,
+      history: []
+    };
+
+    // =========================================================================
+    // LOG & AUDIO ALARM
+    // =========================================================================
+    function addLog(msg, type = 'INFO') {
+      const el = document.getElementById('logList');
+      const time = new Date().toLocaleTimeString('id-ID', { hour12: false });
+      const colors = {
+        INFO: 'text-slate-300',
+        OK: 'text-emerald-400',
+        WARN: 'text-amber-400',
+        ERR: 'text-rose-400 font-semibold'
+      };
+      const row = document.createElement('div');
+      row.className = `flex items-start gap-2 ${colors[type] || colors.INFO}`;
+      row.innerHTML = `<span class="text-slate-500 shrink-0">[${time}]</span><span>${msg}</span>`;
+      el.prepend(row);
+      while (el.children.length > 60) el.removeChild(el.lastChild);
+    }
+
+    function clearLogs() {
+      document.getElementById('logList').innerHTML = '';
+    }
+
+    function toggleAudio() {
+      audioEnabled = !audioEnabled;
+      if (audioEnabled && !audioCtx) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx) audioCtx = new Ctx();
+      }
+      if (audioEnabled && audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+      document.getElementById('audioIcon').textContent = audioEnabled ? '🔊' : '🔇';
+      document.getElementById('audioLabel').textContent = audioEnabled ? 'Alarm Aktif' : 'Alarm';
+      addLog(audioEnabled ? 'Suara alarm diaktifkan.' : 'Suara alarm dimatikan.');
+    }
+
+    function beepAlarm() {
+      if (!audioEnabled || !audioCtx) return;
+      if (Date.now() - lastBeep < 3000) return;
+      lastBeep = Date.now();
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.frequency.value = 880;
+        gain.gain.value = 0.08;
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.25);
+      } catch (e) {}
+    }
+
+    function dismissAlert() {
+      dismissedAlertKey = state.alarm_habis ? 'HABIS' : state.status_str;
+      document.getElementById('alertBanner').classList.add('hidden');
+    }
+
+    // =========================================================================
+    // KONEKSI REAL-TIME WEBSOCKET
+    // =========================================================================
+    function connectWebSocket() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+      ws.onopen = () => {
+        document.getElementById('connDot').className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+        document.getElementById('connText').textContent = hasReceivedEspData ? 'ESP32 Terhubung' : 'Menunggu ESP32';
+        addLog('Terhubung ke server monitoring.', 'OK');
+      };
+
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.telemetry) applyTelemetry(data.telemetry);
+        } catch (e) {}
+      };
+
+      ws.onclose = () => {
+        document.getElementById('connDot').className = 'w-2 h-2 rounded-full bg-rose-500';
+        document.getElementById('connText').textContent = 'Koneksi Terputus';
+        setTimeout(connectWebSocket, 3000);
+      };
+    }
+
+    function animateDrop() {
+      const drop = document.getElementById('svgDroplet');
+      const led = document.getElementById('pdPulseLed');
+      const beam = document.getElementById('irBeamLine');
+
+      drop.classList.remove('animate-drop');
+      void drop.offsetWidth;
+      drop.classList.add('animate-drop');
+
+      led.setAttribute('fill', '#38bdf8');
+      beam.setAttribute('stroke', '#38bdf8');
+      setTimeout(() => {
+        led.setAttribute('fill', '#334155');
+        beam.setAttribute('stroke', '#f43f5e');
+      }, 220);
+    }
+
+    function applyTelemetry(t) {
+      const prevTetes = state.total_tetes;
+
+      Object.assign(state, {
+        actual_tpm: t.actual_tpm ?? state.actual_tpm,
+        target_tpm: t.target_tpm ?? state.target_tpm,
+        ml_jam: t.ml_jam ?? state.ml_jam,
+        interval_ms: t.interval_ms ?? state.interval_ms,
+        total_tetes: t.total_tetes ?? state.total_tetes,
+        servo_pos: t.servo_pos ?? state.servo_pos,
+        servo_target: t.servo_target ?? state.servo_target,
+        auto_mode: t.auto_mode !== undefined ? Boolean(t.auto_mode) : state.auto_mode,
+        status_str: t.status_str || state.status_str,
+        berat_tampil: t.berat_tampil ?? state.berat_tampil,
+        gross: t.gross ?? state.gross,
+        raw_net: t.raw_net ?? state.raw_net,
+        cal_factor: t.cal_factor ?? state.cal_factor,
+        batas_habis: t.batas_habis ?? state.batas_habis,
+        faktor_tetes: t.faktor_tetes ?? state.faktor_tetes,
+        weight_ok: Boolean(t.weight_ok),
+        overload: Boolean(t.overload),
+        alarm_habis: Boolean(t.alarm_habis),
+        armed: Boolean(t.armed)
+      });
+
+      if (t.weight_ok || t.total_tetes > 0 || t.actual_tpm > 0 || t.status_str !== 'Menunggu' || t.interval_ms > 0 || t.raw_net !== 0) {
+        if (!hasReceivedEspData) {
+          addLog('Data real-time dari ESP32 mulai masuk.', 'OK');
+        }
+        hasReceivedEspData = true;
+        document.getElementById('connText').textContent = 'ESP32 Terhubung';
+      }
+
+      if (hasReceivedEspData && state.total_tetes > prevTetes) {
+        animateDrop();
+      }
+
+      if (hasReceivedEspData) {
+        state.history.push({
+          time: new Date().toLocaleTimeString('id-ID', { hour12: false }),
+          actual: state.actual_tpm,
+          target: state.target_tpm,
+          servo: state.servo_pos
+        });
+        if (state.history.length > 45) state.history.shift();
+      }
+
+      syncControls();
+      renderUI();
+    }
+
+    // =========================================================================
+    // AKSI KENDALI KE ESP32
+    // =========================================================================
+    async function sendCommand(serialRaw, action = '', extra = {}) {
+      const payload = {
+        target_tpm: Number(state.target_tpm),
+        faktor_tetes: Number(state.faktor_tetes),
+        auto_mode: Boolean(state.auto_mode),
+        servo_target: Number(state.servo_target),
+        batas_habis: Number(state.batas_habis),
+        cal_factor: Number(state.cal_factor),
+        action,
+        serial_raw: serialRaw,
+        ...extra
+      };
+
+      try {
+        await fetch(`/api/command/${DEVICE_ID}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (e) {
+        addLog('Gagal mengirim pengaturan ke server.', 'ERR');
+      }
+    }
+
+    function onTpmSlide(val) {
+      state.target_tpm = Number(val);
+      document.getElementById('sliderTpmVal').textContent = val;
+      document.getElementById('sliderMlVal').textContent = `≈ ${((val * 60) / state.faktor_tetes).toFixed(1)} mL/jam`;
+    }
+
+    function sendTargetTpm() {
+      syncControls();
+      addLog(`Target kecepatan tetes diatur ke ${state.target_tpm} TPM.`);
+      sendCommand(`s${state.target_tpm}`);
+      renderUI();
+    }
+
+    function setPresetTpm(val) {
+      state.target_tpm = val;
+      sendTargetTpm();
+    }
+
+    function setFaktorTetes(val) {
+      state.faktor_tetes = val;
+      syncControls();
+      addLog(`Jenis selang infus diatur ke ${val} tetes/mL.`);
+      sendCommand(`f${val}`);
+      renderUI();
+    }
+
+    function setAutoMode(isAuto) {
+      state.auto_mode = isAuto;
+      if (isAuto) {
+        addLog('Mode kendali otomatis diaktifkan.', 'OK');
+        sendCommand('o');
+      } else {
+        state.servo_target = state.servo_pos;
+        addLog(`Mode manual diaktifkan (posisi servo ${state.servo_target}°).`, 'WARN');
+        sendCommand(`a${state.servo_target}`);
+      }
+      syncControls();
+      renderUI();
+    }
+
+    function onAngleSlide(val) {
+      state.servo_target = Number(val);
+      document.getElementById('sliderAngleVal').textContent = val;
+    }
+
+    function sendManualAngle() {
+      addLog(`Posisi penjepit servo diatur ke ${state.servo_target}°.`, 'WARN');
+      sendCommand(`a${state.servo_target}`);
+      renderUI();
+    }
+
+    function sendAction(cmdChar, actionName) {
+      const label = actionName === 'TARE' ? 'Nolkan berat kantong (Tare)' : 'Reset posisi timbangan kosong';
+      addLog(`${label} dikirim ke alat.`, 'OK');
+      sendCommand(cmdChar, actionName);
+    }
+
+    function emergencyClose() {
+      state.auto_mode = false;
+      state.servo_target = SUDUT_TUTUP;
+      syncControls();
+      addLog('Hentikan aliran darurat aktif! Penjepit menutup penuh.', 'ERR');
+      sendCommand('a110', 'EMERGENCY_CLOSE');
+      renderUI();
+    }
+
+    function openCalibrationModal() {
+      document.getElementById('inputBatasHabis').value = state.batas_habis;
+      document.getElementById('calModal').classList.remove('hidden');
+    }
+
+    function closeCalibrationModal() {
+      document.getElementById('calModal').classList.add('hidden');
+    }
+
+    function submitCalibration() {
+      const g = parseFloat(document.getElementById('inputCalGram').value);
+      if (!g || g <= 0) return;
+      addLog(`Kalibrasi beban standar ${g} gram dikirim.`, 'OK');
+      sendCommand(`k${g}`, 'CALIBRATE', { calibrate_gram: g });
+    }
+
+    function submitBatasHabis() {
+      const h = parseFloat(document.getElementById('inputBatasHabis').value);
+      if (Number.isNaN(h) || h < 0) return;
+      state.batas_habis = h;
+      addLog(`Batas peringatan cairan habis diatur ke ${h} gram.`, 'OK');
+      sendCommand(`h${h}`);
+      closeCalibrationModal();
+      renderUI();
+    }
+
+    // =========================================================================
+    // PEMBARUAN TAMPILAN & GRAFIK
+    // =========================================================================
+    function syncControls() {
+      document.getElementById('tpmSlider').value = state.target_tpm;
+      document.getElementById('sliderTpmVal').textContent = state.target_tpm;
+      document.getElementById('sliderMlVal').textContent = `≈ ${((state.target_tpm * 60) / state.faktor_tetes).toFixed(1)} mL/jam`;
+
+      const clamped = Math.max(SUDUT_BUKA, Math.min(SUDUT_TUTUP, state.servo_target));
+      document.getElementById('angleSlider').value = clamped;
+      document.getElementById('sliderAngleVal').textContent = clamped;
+
+      [10, 15, 20, 60].forEach(f => {
+        const b = document.getElementById(`btnFk${f}`);
+        b.className = Number(state.faktor_tetes) === f
+          ? 'fk-btn py-2 rounded-xl text-xs font-mono font-semibold border transition bg-sky-500/20 border-sky-400/50 text-sky-300'
+          : 'fk-btn py-2 rounded-xl text-xs font-mono font-semibold border transition bg-[#090d16] border-slate-800 text-slate-400 hover:text-white';
+      });
+
+      document.querySelectorAll('.preset-btn').forEach(btn => {
+        const val = Number(btn.textContent.trim());
+        btn.className = val === Number(state.target_tpm)
+          ? 'preset-btn py-1.5 rounded-lg bg-sky-500/20 border border-sky-400/50 text-[11px] font-mono font-bold text-sky-300 transition'
+          : 'preset-btn py-1.5 rounded-lg bg-[#111827] hover:bg-slate-800 border border-slate-800 text-[11px] font-mono font-semibold text-slate-300 transition';
+      });
+
+      const btnAuto = document.getElementById('btnAuto');
+      const btnManual = document.getElementById('btnManual');
+      const box = document.getElementById('manualServoBox');
+      if (state.auto_mode) {
+        btnAuto.className = 'py-2.5 px-2 rounded-xl text-xs font-semibold border transition bg-emerald-500/20 border-emerald-400/50 text-emerald-300';
+        btnManual.className = 'py-2.5 px-2 rounded-xl text-xs font-semibold border transition bg-[#090d16] border-slate-800 text-slate-400 hover:text-white';
+        box.classList.add('opacity-45', 'pointer-events-none');
+      } else {
+        btnManual.className = 'py-2.5 px-2 rounded-xl text-xs font-semibold border transition bg-amber-500/20 border-amber-400/50 text-amber-300';
+        btnAuto.className = 'py-2.5 px-2 rounded-xl text-xs font-semibold border transition bg-[#090d16] border-slate-800 text-slate-400 hover:text-white';
+        box.classList.remove('opacity-45', 'pointer-events-none');
+      }
+    }
+
+    function renderUI() {
+      const mlJam = (state.actual_tpm * 60) / state.faktor_tetes;
+      const selisihTPM = Math.round(state.actual_tpm) - state.target_tpm;
+
+      // Badge Status
+      const badge = document.getElementById('statusBadge');
+      const isCrit = state.alarm_habis || state.status_str === 'HABIS' || state.status_str === 'HENTI' || state.status_str === 'Cek selg';
+      const isWarn = state.status_str === 'Cepat' || state.status_str === 'Lambat' || state.status_str === 'Manual';
+      badge.textContent = state.status_str;
+      badge.className = isCrit
+        ? 'px-2.5 py-1 rounded-full text-[11px] font-mono font-bold border bg-rose-500/20 text-rose-400 border-rose-500/40 animate-pulse'
+        : isWarn
+          ? 'px-2.5 py-1 rounded-full text-[11px] font-mono font-bold border bg-amber-500/20 text-amber-300 border-amber-500/40'
+          : state.status_str === 'Stabil'
+            ? 'px-2.5 py-1 rounded-full text-[11px] font-mono font-bold border bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+            : 'px-2.5 py-1 rounded-full text-[11px] font-mono font-bold border bg-slate-800 text-slate-300 border-slate-700';
+
+      // Status Sensor Berat
+      const sw = document.getElementById('sensorWeightStatus');
+      if (!hasReceivedEspData) {
+        sw.textContent = 'Sensor Berat: Menunggu';
+        sw.className = 'text-slate-400';
+      } else if (!state.weight_ok) {
+        sw.textContent = 'Sensor Berat: Belum Terpasang';
+        sw.className = 'text-rose-400 font-bold';
+      } else if (state.overload) {
+        sw.textContent = 'Sensor Berat: Melebihi 5 kg';
+        sw.className = 'text-rose-400 font-bold';
+      } else if (state.cal_factor === 0) {
+        sw.textContent = 'Sensor Berat: Belum Kalibrasi';
+        sw.className = 'text-amber-400';
+      } else {
+        sw.textContent = 'Sensor Berat: Siap';
+        sw.className = 'text-emerald-300';
+      }
+
+      // Layar LCD Alat
+      const row0 = `TPM:${state.actual_tpm.toFixed(1).padStart(4, ' ')}/${state.target_tpm} S${String(state.servo_pos).padStart(3, ' ')}`.padEnd(16, ' ').slice(0, 16);
+      let row1Raw = 'Menunggu ESP32..';
+      if (hasReceivedEspData) {
+        if (state.alarm_habis) row1Raw = 'CAIRAN HABIS!';
+        else if (!state.weight_ok) row1Raw = 'HX711 ERROR';
+        else if (state.cal_factor === 0) row1Raw = 'Blm kalibrasi';
+        else if (state.overload) row1Raw = 'OVERLOAD! maks5kg';
+        else row1Raw = `${Math.round(state.berat_tampil).toString().padStart(5, ' ')}g ${state.status_str}`;
+      }
+      document.getElementById('lcdRow0').textContent = row0;
+      document.getElementById('lcdRow1').textContent = row1Raw.padEnd(16, ' ').slice(0, 16);
+      document.getElementById('lcdArmedPill').textContent = state.armed ? 'Aktif' : 'Standby';
+
+      // Kartu 1: Sisa Cairan
+      document.getElementById('valBerat').textContent = state.cal_factor === 0 ? `raw ${state.raw_net}` : state.berat_tampil.toFixed(1);
+      document.getElementById('calLabel').textContent = `Cal: ${state.cal_factor.toFixed(1)}`;
+      document.getElementById('valGrossBatas').textContent = `${state.gross.toFixed(0)}g / ${state.batas_habis.toFixed(0)}g`;
+
+      if (mlJam > 0.5 && state.berat_tampil > 0) {
+        const mins = Math.round((state.berat_tampil / mlJam) * 60);
+        document.getElementById('valEstHabis').textContent = `${String(Math.floor(mins / 60)).padStart(2, '0')}j ${String(mins % 60).padStart(2, '0')}m`;
+      } else {
+        document.getElementById('valEstHabis').textContent = '--';
+      }
+
+      // Kartu 2: Kecepatan Tetes
+      document.getElementById('targetLabel').textContent = `Target ${state.target_tpm}`;
+      document.getElementById('valTPM').textContent = state.actual_tpm.toFixed(1);
+      document.getElementById('valFlowInterval').textContent = `${mlJam.toFixed(1)} mL/j • ${state.interval_ms}ms`;
+      document.getElementById('valTotalTetes').textContent = state.total_tetes;
+
+      // Kartu 3: Penjepit Servo
+      document.getElementById('modeLabel').textContent = state.auto_mode ? 'OTOMATIS' : 'MANUAL';
+      document.getElementById('modeLabel').className = state.auto_mode
+        ? 'px-1.5 rounded bg-emerald-500/15 text-emerald-400 font-mono'
+        : 'px-1.5 rounded bg-amber-500/15 text-amber-400 font-mono';
+      document.getElementById('valServoPos').textContent = `${state.servo_pos}°`;
+      document.getElementById('valServoTarget').textContent = `→ ${state.servo_target}°`;
+      const errEl = document.getElementById('valSelisihTPM');
+      errEl.textContent = `${selisihTPM >= 0 ? '+' : ''}${selisihTPM} TPM`;
+      errEl.className = hasReceivedEspData && Math.abs(selisihTPM) <= TOLERANSI_TPM ? 'text-emerald-400' : 'text-slate-300';
+
+      // Visualisasi SVG Real-Time
+      const pct = Math.max(0, Math.min(100, (state.berat_tampil / 500) * 100));
+      const maxBagH = 140;
+      const fluidH = (pct / 100) * maxBagH;
+      const fluidY = 214 - fluidH;
+      document.getElementById('svgFluidRect').setAttribute('y', fluidY.toFixed(1));
+      document.getElementById('svgFluidRect').setAttribute('height', fluidH.toFixed(1));
+      document.getElementById('svgFluidLine').setAttribute('y1', fluidY.toFixed(1));
+      document.getElementById('svgFluidLine').setAttribute('y2', fluidY.toFixed(1));
+      document.getElementById('svgFluidLine').setAttribute('opacity', fluidH > 1 ? '1' : '0');
+
+      document.getElementById('fluidGradTop').setAttribute('stop-color', state.alarm_habis ? '#f59e0b' : '#38bdf8');
+      document.getElementById('fluidGradBot').setAttribute('stop-color', state.alarm_habis ? '#b45309' : '#0284c7');
+
+      document.getElementById('svgBagGramText').textContent = `${Math.round(state.berat_tampil)} g`;
+      document.getElementById('svgBagLimitText').textContent = `Batas: ${Math.round(state.batas_habis)} g`;
+      document.getElementById('svgWeightLabel').textContent = `Bersih: ${state.berat_tampil.toFixed(1)} g`;
+      document.getElementById('svgGrossLabel').textContent = `Total: ${state.gross.toFixed(1)} g`;
+      document.getElementById('svgTpmLabel').textContent = `${state.actual_tpm.toFixed(1)} TPM • ${state.interval_ms}ms`;
+
+      const normServo = Math.max(0, Math.min(1, (state.servo_pos - SUDUT_BUKA) / (SUDUT_TUTUP - SUDUT_BUKA)));
+      document.getElementById('servoPinchArm').setAttribute('width', 13 + Math.round(normServo * 12));
+      document.getElementById('svgServoAngleText').textContent = `${state.servo_pos}°`;
+      document.getElementById('svgClampOpenText').textContent = `Posisi: ${state.servo_pos}°`;
+      document.getElementById('svgModeCallout').textContent = `Mode: ${state.auto_mode ? 'Otomatis' : 'Manual'}`;
+      document.getElementById('tubeFluidStream').setAttribute('opacity', state.actual_tpm > 0 ? '0.82' : '0.15');
+
+      // Banner Peringatan
+      const banner = document.getElementById('alertBanner');
+      const alertKey = state.alarm_habis ? 'HABIS' : state.status_str;
+      if (hasReceivedEspData && (isCrit || !state.weight_ok || state.overload) && dismissedAlertKey !== alertKey) {
+        banner.classList.remove('hidden');
+        if (state.alarm_habis) {
+          document.getElementById('alertText').textContent = `CAIRAN HABIS! Berat total (${state.gross.toFixed(1)} g) di bawah batas (${state.batas_habis} g). Penjepit menutup penuh.`;
+          beepAlarm();
+        } else if (state.status_str === 'Cek selg' || state.status_str === 'HENTI') {
+          document.getElementById('alertText').textContent = `ALIRAN TERHENTI (${state.status_str}): Tidak ada tetesan terdeteksi. Periksa selang atau kantong infus.`;
+          beepAlarm();
+        } else if (!state.weight_ok) {
+          document.getElementById('alertText').textContent = 'Sensor berat (HX711) tidak terdeteksi. Periksa sambungan kabel sensor.';
+        } else if (state.overload) {
+          document.getElementById('alertText').textContent = 'Beban melebihi kapasitas maksimal timbangan (5000 g).';
+        }
+      } else if (!isCrit && state.weight_ok && !state.overload) {
+        banner.classList.add('hidden');
+        dismissedAlertKey = null;
+      }
+
+      drawChart();
+    }
+
+    // =========================================================================
+    // GRAFIK REAL-TIME
+    // =========================================================================
+    function drawChart() {
+      const canvas = document.getElementById('telemetryChart');
+      const wrap = document.getElementById('chartWrapper');
+      const hint = document.getElementById('chartEmptyHint');
+      if (!canvas || !wrap) return;
+
+      const rect = wrap.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      const w = rect.width;
+      const h = rect.height;
+      ctx.clearRect(0, 0, w, h);
+
+      if (state.history.length < 2) {
+        hint.classList.remove('hidden');
+        return;
+      }
+      hint.classList.add('hidden');
+
+      const padL = 36, padR = 14, padT = 16, padB = 22;
+      const plotW = w - padL - padR;
+      const plotH = h - padTop - padB;
+      const maxY = Math.max(120, state.target_tpm + 20);
+
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px "JetBrains Mono", monospace';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+
+      for (let i = 0; i <= 4; i++) {
+        const val = Math.round((maxY / 4) * i);
+        const y = padT + plotH - (val / maxY) * plotH;
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(w - padR, y);
+        ctx.stroke();
+        ctx.fillText(val.toString(), padL - 6, y);
+      }
+
+      const stepX = plotW / (state.history.length - 1);
+      const plot = (key, color, dashed, scaleMax) => {
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        if (dashed) ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        state.history.forEach((pt, i) => {
+          const x = padL + i * stepX;
+          const y = padT + plotH - (Math.min(scaleMax, Math.max(0, pt[key])) / scaleMax) * plotH;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.restore();
+      };
+
+      plot('servo', 'rgba(251, 191, 36, 0.85)', false, 120);
+      plot('target', '#34d399', true, maxY);
+      plot('actual', '#38bdf8', false, maxY);
+
+      const tooltip = document.getElementById('chartTooltip');
+      if (hoverIndex >= 0 && hoverIndex < state.history.length) {
+        const pt = state.history[hoverIndex];
+        const hx = padL + hoverIndex * stepX;
+        const hy = padT + plotH - (Math.min(maxY, pt.actual) / maxY) * plotH;
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(226, 232, 240, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(hx, padT);
+        ctx.lineTo(hx, padT + plotH);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.restore();
+
+        tooltip.classList.remove('hidden');
+        document.getElementById('ttTime').textContent = pt.time;
+        document.getElementById('ttActual').textContent = Number(pt.actual).toFixed(1);
+        document.getElementById('ttTarget').textContent = pt.target;
+        document.getElementById('ttServo').textContent = Math.round(pt.servo);
+      } else {
+        tooltip.classList.add('hidden');
+      }
+    }
+
+    function setupChartHover() {
+      const canvas = document.getElementById('telemetryChart');
+      const updateHover = (clientX) => {
+        const rect = canvas.getBoundingClientRect();
+        const padLeft = 36, padRight = 14;
+        const plotW = rect.width - padLeft - padRight;
+        const relX = clientX - rect.left - padLeft;
+        if (relX < 0 || relX > plotW || state.history.length < 2) hoverIndex = -1;
+        else hoverIndex = Math.round((relX / plotW) * (state.history.length - 1));
+        drawChart();
+      };
+      canvas.addEventListener('mousemove', e => updateHover(e.clientX));
+      canvas.addEventListener('mouseleave', () => { hoverIndex = -1; drawChart(); });
+    }
+
+    window.addEventListener('resize', drawChart);
+    window.onload = () => {
+      setupChartHover();
+      syncControls();
+      renderUI();
+      connectWebSocket();
+    };
+  </script>
+</body>
+</html>
